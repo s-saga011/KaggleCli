@@ -21,6 +21,7 @@ Kaggleビルドkernel ──(成果物 tar.gz)──> /kaggle/working
 | コマンド | 動作 |
 |---|---|
 | `kbin.py save <kernel> <name> [--all] [--note "..."]` | kernel出力をローカル保存。デフォルトはtar.gz/tgz/zipのみ対象 |
+| `kbin.py import <file> <name> [--note "..."]` | ローカルビルドの成果物(tar.gz等)を取り込む。Kaggle外(WSL2等)でビルドした場合の入口 |
 | `kbin.py push <name>` | latestを dataset `<user>/kbin-<name>` にcreate/version |
 | `kbin.py list` | バックアップ一覧 |
 | `kbin.py snippet <name>` | notebook側の復元セル（コピー＋chmod）を出力 |

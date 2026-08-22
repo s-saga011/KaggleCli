@@ -85,6 +85,30 @@ def cmd_save(args):
         print(f"OK: {dest}")
 
 
+def cmd_import(args):
+    """ローカルファイル(x299等でビルドしたtar.gz)をバックアップに取り込む"""
+    if not os.path.exists(args.file):
+        sys.exit(f"ファイルが無い: {args.file}")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = os.path.join(KBIN_HOME, args.name, stamp)
+    os.makedirs(dest, exist_ok=True)
+    shutil.copy2(args.file, dest)
+    base = os.path.basename(args.file)
+    meta = {"name": args.name, "source": os.path.abspath(args.file),
+            "saved_at": stamp,
+            "files": {base: {"size": os.path.getsize(args.file),
+                             "sha256": sha256(args.file)}}}
+    if args.note:
+        meta["note"] = args.note
+    with open(os.path.join(dest, "meta.json"), "w") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    latest = os.path.join(KBIN_HOME, args.name, "latest")
+    if os.path.islink(latest):
+        os.unlink(latest)
+    os.symlink(stamp, latest)
+    print(f"OK: {dest} ({os.path.getsize(args.file) / 2**20:.1f} MB)")
+
+
 def cmd_push(args):
     """ローカルバックアップ(latest)をKaggle datasetへ"""
     src = os.path.join(KBIN_HOME, args.name, "latest")
@@ -159,6 +183,12 @@ def main():
     p.add_argument("--all", action="store_true", help="tar.gz以外の全ファイルも保存")
     p.add_argument("--note", help="メモ (例: 'commit 2115b73, arch 60;75, static')")
     p.set_defaults(fn=cmd_save)
+
+    p = sub.add_parser("import", help="ローカルビルド成果物(tar.gz等)を取り込む")
+    p.add_argument("file", help="取り込むファイル")
+    p.add_argument("name", help="バックアップ名")
+    p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
+    p.set_defaults(fn=cmd_import)
 
     p = sub.add_parser("push", help="latestをKaggle datasetへアップロード")
     p.add_argument("name")

@@ -25,6 +25,9 @@ python3 kbin.py save <kernel_ref> <name> [--all] [--note "..."]
 python3 kbin.py push <name>
     # latest版を dataset <user>/kbin-<name> へ。既存ならversion、新規ならcreate
 
+python3 kbin.py import <tar.gz> <name> [--note "..."]
+    # Kaggle外(x299 WSL2等)でビルドした成果物を取り込む。以降のpushは同じ
+
 python3 kbin.py list        # バックアップ一覧（版数・サイズ・note）
 python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に出す
 ```
