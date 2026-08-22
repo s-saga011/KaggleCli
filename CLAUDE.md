@@ -8,6 +8,9 @@ Kaggleのバッチ実行はコンテナが毎回まっさらでビルドし直�
 
 本体は `kbin.py` 1ファイルのみ。`python3 kbin.py <cmd>` で実行（依存はkaggle CLIだけ）。
 
+clone不要のワンライナーも可（レシピは gh api → raw の順で自動取得）:
+`gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.github.raw" | python3 - build llamacpp --host x299 --wsl Ubuntu --exchange-dir C:/Users/youei/work/AI/kbuild --push`
+
 ## 前提
 
 - `kaggle` CLI（2.x）が認証済みであること（`~/.kaggle/kaggle.json` にusername/key）

@@ -6,6 +6,24 @@ Kaggle datasetとして戻して再利用するためのCLI。
 
 本体は `kbin.py` 1ファイル。依存はkaggle CLI（認証済み）のみ。
 
+## ワンライナー（git clone不要）
+
+レシピはGitHubから自動取得されるので、cloneせずにビルド→dataset化まで一発:
+
+```bash
+# private repoの間（gh認証で取得）
+gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.github.raw" \
+  | python3 - build llamacpp --host x299 --wsl Ubuntu \
+      --exchange-dir C:/Users/youei/work/AI/kbuild --name llamacpp-cuda --push
+
+# 公開後はcurlで同じことができる
+curl -fsSL https://raw.githubusercontent.com/s-saga011/KaggleCli/main/kbin.py \
+  | python3 - build llamacpp --host <linux箱> --name llamacpp-cuda --push
+```
+
+レシピの解決順: スクリプト隣の `recipes/` → `gh api` → `raw.githubusercontent.com`
+（リポジトリは `KBIN_REPO` 環境変数で差し替え可）。
+
 ## フロー
 
 ビルドの入口は3つ、出口は全部同じ dataset:
