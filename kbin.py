@@ -201,6 +201,38 @@ def _wsl_list():
     return [l.strip() for l in text.splitlines() if l.strip()]
 
 
+def _docker_ok():
+    """dockerデーモンが応答するか（デーモン停止時はハングするのでtimeout必須）"""
+    try:
+        r = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
+                           capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _docker_build(recipe_body, name):
+    """linux/amd64のubuntu:22.04コンテナ内でレシピを実行（全OS共通のクロスビルド）
+
+    - glibcはKaggleイメージと同じUbuntu 22.04世代に固定される
+    - ホストを汚さない（CUDA toolkitはコンテナ内。aptキャッシュはnamed volumeで再利用）
+    - Apple SiliconではRosetta 2エミュレーションになりビルドは数倍遅い点に注意
+    """
+    out_dir = tempfile.mkdtemp(prefix="kbin-docker-")
+    kbin_out = f"/out/kbin-{name}.tar.gz"
+    script = f"export KBIN_OUT='{kbin_out}'\n" + recipe_body
+    cmd = ["docker", "run", "--rm", "-i", "--platform", "linux/amd64",
+           "-v", f"{out_dir}:/out",
+           "-v", "kbin-apt-cache:/var/cache/apt/archives",
+           "ubuntu:22.04", "bash", "-s"]
+    print(f"[docker] linux/amd64 ubuntu:22.04 でビルド -> {out_dir}")
+    r = subprocess.run(cmd, input=script.encode())
+    path = os.path.join(out_dir, f"kbin-{name}.tar.gz")
+    if r.returncode != 0 or not os.path.exists(path):
+        sys.exit(f"dockerビルド失敗 (rc={r.returncode})")
+    return path
+
+
 def _local_build(recipe_body, name, wsl_distro=None):
     """このマシン上でレシピを実行して成果物パスを返す（Linux直 or 自機WSL）"""
     if wsl_distro:
@@ -222,44 +254,58 @@ def _local_build(recipe_body, name, wsl_distro=None):
     return out_path
 
 
-def cmd_auto(args):
-    """実行マシンに応じて最速のビルド経路を自動選択する
-
-    Windows: 自機のWSLでビルド（GitHub Actionsより速い）。WSLが無ければ
-             `wsl --install` を試行（要管理者権限・再起動）、不可ならciへ。
-    Linux:   その場でビルド（root or sudo。CUDA toolkit自動導入込み）。
-    その他(Mac等): CUDAツールチェーンが無いので ci (GitHub Actions) へ委譲。
-    """
-    name = args.name
+def _pick_backend(args):
+    """auto時のバックエンド選択:
+    Linux:   docker(あれば、ホストを汚さない) > local直
+    Windows: wsl(既存なら最速) > docker > wsl-install試行
+    Mac等:   ci (dockerはRosettaで数倍遅いので明示 --backend docker のみ)"""
+    if args.backend != "auto":
+        return args.backend
+    if sys.platform.startswith("linux"):
+        return "docker" if _docker_ok() else "local"
     if sys.platform == "win32":
         distro = os.environ.get("KBIN_WSL_DISTRO", "Ubuntu")
         distros = _wsl_list()
         if distros and any(distro.lower() in d.lower() for d in distros):
-            recipe_body = load_recipe(args.recipe)
-            path = _local_build(recipe_body, name, wsl_distro=distro)
-            store_file(path, name, note=args.note or
-                       f"kbin auto: local WSL({distro}) recipe={args.recipe}")
-        elif distros is not None:
-            print(f"[auto] WSLはあるが {distro} が無い → インストール試行")
-            r = subprocess.run(["wsl", "--install", "-d", distro])
-            sys.exit("WSLディストロのインストールを開始した。完了後(要再起動の場合あり)に再実行を"
-                     if r.returncode == 0 else
-                     "WSLインストール失敗 → `kbin ci --push` (GitHub Actions) を使うか手動でWSLを導入")
-        else:
-            print("[auto] WSLが無い → wsl --install を試行（管理者権限が必要）")
-            r = subprocess.run(["wsl", "--install"])
-            sys.exit("WSLのインストールを開始した。再起動後に再実行を" if r.returncode == 0
-                     else "WSLインストール不可 → `kbin ci --push` (GitHub Actions) を推奨")
-    elif sys.platform.startswith("linux"):
-        recipe_body = load_recipe(args.recipe)
-        path = _local_build(recipe_body, name)
-        store_file(path, name, note=args.note or
-                   f"kbin auto: local linux recipe={args.recipe}")
-    else:
-        print(f"[auto] {sys.platform} ではローカルビルド不可 → GitHub Actions (ci) に委譲")
-        args.workflow = getattr(args, "workflow", None) or "build-llamacpp"
-        args.artifact = getattr(args, "artifact", None) or "llamacpp-bin"
+            return "wsl"
+        if _docker_ok():
+            return "docker"
+        return "wsl-install"
+    return "ci"
+
+
+def cmd_auto(args):
+    """実行マシンに応じて最速のビルド経路を自動選択する（--backendで固定も可）"""
+    name = args.name
+    be = _pick_backend(args)
+    print(f"[auto] backend = {be}")
+    if be == "ci":
         return cmd_ci(args)
+    if be == "wsl-install":
+        print("[auto] WSLもdockerも無い → wsl --install を試行（管理者権限が必要）")
+        r = subprocess.run(["wsl", "--install"])
+        sys.exit("WSLのインストールを開始した。再起動後に再実行を" if r.returncode == 0
+                 else "WSLインストール不可 → `kbin ci --push` (GitHub Actions) を推奨")
+    recipe_body = load_recipe(args.recipe)
+    if be == "docker":
+        if not _docker_ok():
+            sys.exit("dockerデーモンが応答しない（Docker Desktop起動を確認）")
+        if sys.platform == "darwin":
+            print("[auto] 注意: Apple SiliconではRosettaエミュレーションでビルドが数倍遅い。"
+                  "急がないなら `kbin ci` も検討を")
+        path = _docker_build(recipe_body, name)
+        note_src = "docker(linux/amd64)"
+    elif be == "wsl":
+        distro = os.environ.get("KBIN_WSL_DISTRO", "Ubuntu")
+        path = _local_build(recipe_body, name, wsl_distro=distro)
+        note_src = f"local WSL({distro})"
+    elif be == "local":
+        path = _local_build(recipe_body, name)
+        note_src = "local linux"
+    else:
+        sys.exit(f"不明なbackend: {be}")
+    store_file(path, name,
+               note=args.note or f"kbin auto: {note_src} recipe={args.recipe}")
     if args.push:
         cmd_push(args)
 
@@ -384,7 +430,9 @@ def main():
     p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
     p.set_defaults(fn=cmd_import)
 
-    p = sub.add_parser("auto", help="実行マシンで最速経路を自動選択（Win=自機WSL / Linux=直 / 他=ci）")
+    p = sub.add_parser("auto", help="実行マシンで最速経路を自動選択（Linux=docker/直, Win=WSL/docker, 他=ci）")
+    p.add_argument("--backend", choices=["auto", "docker", "wsl", "local", "ci"],
+                   default="auto", help="経路を固定したい場合に指定")
     p.add_argument("--recipe", default="llamacpp", help="recipes/<recipe>.sh")
     p.add_argument("--name", default="llamacpp-cuda", help="バックアップ名")
     p.add_argument("--note")

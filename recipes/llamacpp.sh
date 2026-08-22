@@ -14,7 +14,11 @@ LOG=/tmp/kbin-llamacpp.log
 echo "recipe=llamacpp archs=$ARCHS out=$KBIN_OUT log=$LOG"
 
 if [ ! -x /usr/local/cuda-12.6/bin/nvcc ]; then
-  echo "installing cuda-toolkit-12-6 (initial setup, a few minutes)..."
+  echo "installing build deps + cuda-toolkit-12-6 (initial setup, a few minutes)..."
+  apt-get update -qq >> "$LOG" 2>&1
+  # 素のubuntu:22.04コンテナ(docker backend)でも自給できるよう依存を明示
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    git wget ca-certificates cmake build-essential >> "$LOG" 2>&1
   cd /tmp
   wget -q https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
   dpkg -i cuda-keyring_1.1-1_all.deb >> "$LOG" 2>&1
@@ -41,7 +45,7 @@ cmake --build build -j"$(nproc)" --target llama-bench llama-cli llama-server >> 
   echo "commit: $COMMIT"
   echo "arch: $ARCHS"
   echo "flags: BUILD_SHARED_LIBS=OFF LLAMA_CURL=OFF Release"
-  echo "built_on: $(hostname) $(nvcc --version | grep release)"
+  echo "built_on: $(uname -n) $(nvcc --version | grep release)"
   echo "built_at: $(date -Iseconds)"
   echo "targets: llama-bench llama-cli llama-server"
 } > build/bin/BUILDINFO.txt
