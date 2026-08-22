@@ -1,0 +1,64 @@
+name: build-llamacpp
+
+# GPU無しのGitHub-hostedランナーでllama.cpp CUDA fatバイナリをクロスビルドする。
+# nvccはコード生成にGPU不要、リンクはtoolkit同梱のstubs/libcuda.soで足りる。
+# ubuntu-22.04固定: Kaggleイメージとglibc世代(2.35)を合わせるため。latest(24.04)は不可。
+on:
+  workflow_dispatch:
+    inputs:
+      archs:
+        description: "CUDA architectures (Kaggle: P100=60, T4=75)"
+        default: "60;75;86"
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Disk before
+        run: df -h / | tail -1
+
+      - name: Install CUDA toolkit 12.6
+        run: |
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cuda-toolkit-12-6 > /dev/null
+          sudo rm -rf /var/cache/apt
+          /usr/local/cuda-12.6/bin/nvcc --version | tail -1
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          git -C llama.cpp log -1 --format='commit: %h %cd' --date=short
+
+      - name: Build (fat ${{ inputs.archs }}, static)
+        run: |
+          cd llama.cpp
+          export PATH=/usr/local/cuda-12.6/bin:$PATH
+          cmake -B build -DGGML_CUDA=ON "-DCMAKE_CUDA_ARCHITECTURES=${{ inputs.archs }}" \
+            -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)" --target llama-bench llama-cli llama-server
+
+      - name: Package
+        run: |
+          cd llama.cpp
+          COMMIT=$(git rev-parse --short HEAD)
+          {
+            echo "commit: $COMMIT"
+            echo "arch: ${{ inputs.archs }}"
+            echo "flags: BUILD_SHARED_LIBS=OFF LLAMA_CURL=OFF Release"
+            echo "built_on: github-actions ubuntu-22.04 $(/usr/local/cuda-12.6/bin/nvcc --version | grep release)"
+            echo "built_at: $(date -Iseconds)"
+            echo "targets: llama-bench llama-cli llama-server"
+          } > build/bin/BUILDINFO.txt
+          cat build/bin/BUILDINFO.txt
+          tar czf "$GITHUB_WORKSPACE/llamacpp-bin.tar.gz" -C build/bin .
+          ls -la "$GITHUB_WORKSPACE/llamacpp-bin.tar.gz"
+          df -h / | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-bin
+          path: llamacpp-bin.tar.gz
+          retention-days: 14
