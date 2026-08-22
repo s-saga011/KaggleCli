@@ -72,6 +72,8 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
 - llama.cppをKaggleでビルドする場合、`CUDA::cuda_driver` が見つからずCMakeが失敗する
   → `-DCUDA_cuda_driver_LIBRARY=/usr/local/nvidia/lib64/libcuda.so.1` を直指定
   （`GGML_CUDA_NO_VMM=ON` でも回避できるが `-sm row` が使えなくなる）
+- **buildの同時実行は衝突する**（2026-08-23実証）: レシピの作業dirが固定(`/root/kbin-llamacpp`)のため、同一ホストで2本走ると後発の`rm -rf`が先発を破壊する。「Fatal error: can't create *.cu.o」+「getcwd() failed」が出たらこれ。対策候補: 作業dirに`$$`を付ける or flock
+- WSLが `Wsl/Service/0x80072747` で起動しないことがある → `ssh x299 "wsl --shutdown; Start-Sleep -Seconds 8; wsl -d Ubuntu -- echo OK"` で復旧。ssh先はPowerShellなので`&`連結はバックグラウンドジョブになる（`;`で順次実行する）
 - `--note` にcommit hash・arch・static/sharedを必ず残す。後から「このバイナリ何だっけ」を防ぐ
 - kernel-metadata.jsonの`id`と`title`のslugが食い違うと、**Kaggleはtitle由来のslugを採用する**（idは無視され警告のみ）。titleはidにslug一致させること
 - **dataset version更新直後にkernelを実行すると旧版がマウントされることがある**（サーバー側のzip展開処理待ち、511MBで数分）。push後は数分置いてからkernelを実行。どの版を掴んだかはBUILDINFO.txtのbuilt_onで確認できる（これがBUILDINFO同梱を必須にする理由でもある）
