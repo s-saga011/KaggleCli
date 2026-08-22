@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""kbin — Kaggleでビルドしたバイナリ等のMac側バックアップ&再利用ツール
+"""kbin — ビルドにKaggleのGPU枠を1秒も使わないためのCLI
 
-フロー:
-  1. Kaggle上のビルド用kernelが成果物を /kaggle/working に出す（tar.gz推奨）
-  2. kbin save <kernel> <name>   : kernel出力をMacにバックアップ（正本）
-  3. kbin push <name>            : バックアップをKaggle datasetにアップロード
-  4. kbin snippet <name>         : notebook側で使うコピー&chmodセルを表示
-  5. kbin list                   : バックアップ一覧
+ビルドはGPU不要のCPUマシンに追い出し、Kaggle側はdatasetから数秒で復元する。
+
+推奨フロー（ビルドマシン不要）:
+  kbin ci --push                 : GitHub Actionsでビルド→回収→dataset化まで一発
+  kbin snippet <name>            : notebook側で使う復元セルを表示
+
+その他の入口:
+  kbin build <recipe> --host <ssh先>  : 手元/リモートLinuxでビルド（速い、約6分）
+  kbin save <kernel> <name>           : Kaggle上でビルドした成果物を回収
+  kbin import <file> <name>           : ビルド済みtar.gzを取り込む
 
 保存先: ~/kaggle-bincache/<name>/<日時>/ （KBIN_HOME で変更可）
 dataset id: <user>/kbin-<name>
