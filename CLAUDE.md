@@ -62,6 +62,7 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
   → `-DCUDA_cuda_driver_LIBRARY=/usr/local/nvidia/lib64/libcuda.so.1` を直指定
   （`GGML_CUDA_NO_VMM=ON` でも回避できるが `-sm row` が使えなくなる）
 - `--note` にcommit hash・arch・static/sharedを必ず残す。後から「このバイナリ何だっけ」を防ぐ
+- kernel-metadata.jsonの`id`と`title`のslugが食い違うと、**Kaggleはtitle由来のslugを採用する**（idは無視され警告のみ）。titleはidにslug一致させること
 
 ## 変更時の作法
 
