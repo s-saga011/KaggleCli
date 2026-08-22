@@ -39,7 +39,7 @@ def kaggle_user():
     # kaggle CLIの認証情報からユーザー名を取る
     cfg = os.path.expanduser("~/.kaggle/kaggle.json")
     if os.path.exists(cfg):
-        return json.load(open(cfg))["username"]
+        return json.load(open(cfg, encoding="utf-8"))["username"]
     out = subprocess.run(["kaggle", "config", "view"], capture_output=True, text=True).stdout
     for line in out.splitlines():
         if "username" in line:
@@ -81,7 +81,7 @@ def cmd_save(args):
             print(f"  saved: {os.path.basename(p)} ({os.path.getsize(p) / 2**20:.1f} MB)")
         if args.note:
             meta["note"] = args.note
-        with open(os.path.join(dest, "meta.json"), "w") as f:
+        with open(os.path.join(dest, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
         set_latest(args.name, stamp)
         print(f"OK: {dest}")
@@ -96,7 +96,7 @@ def set_latest(name, stamp):
             os.unlink(latest)
         os.symlink(stamp, latest)
     except OSError:
-        with open(os.path.join(d, "LATEST"), "w") as f:
+        with open(os.path.join(d, "LATEST"), "w", encoding="utf-8") as f:
             f.write(stamp)
 
 
@@ -108,7 +108,7 @@ def get_latest(name):
         return os.path.realpath(latest)
     lf = os.path.join(d, "LATEST")
     if os.path.exists(lf):
-        p = os.path.join(d, open(lf).read().strip())
+        p = os.path.join(d, open(lf, encoding="utf-8").read().strip())
         return p if os.path.isdir(p) else None
     return None
 
@@ -126,7 +126,7 @@ def store_file(path, name, note=None, source=None):
                              "sha256": sha256(path)}}}
     if note:
         meta["note"] = note
-    with open(os.path.join(dest, "meta.json"), "w") as f:
+    with open(os.path.join(dest, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
     set_latest(name, stamp)
     print(f"OK: {dest} ({os.path.getsize(path) / 2**20:.1f} MB)")
@@ -148,7 +148,7 @@ def load_recipe(name):
         base = ""
     local = os.path.join(base, "recipes", f"{name}.sh")
     if base and os.path.exists(local):
-        return open(local).read()
+        return open(local, encoding="utf-8").read()
     repo = os.environ.get("KBIN_REPO", "s-saga011/KaggleCli")
     r = subprocess.run(["gh", "api", f"repos/{repo}/contents/recipes/{name}.sh",
                         "-H", "Accept: application/vnd.github.raw"],
@@ -371,7 +371,7 @@ def cmd_push(args):
     with tempfile.TemporaryDirectory() as tmp:
         for f in os.listdir(src):
             shutil.copy2(os.path.join(src, f), tmp)
-        with open(os.path.join(tmp, "dataset-metadata.json"), "w") as f:
+        with open(os.path.join(tmp, "dataset-metadata.json"), "w", encoding="utf-8") as f:
             json.dump({"id": ds_id, "title": f"kbin {args.name}",
                        "licenses": [{"name": "CC0-1.0"}]}, f)
         # 既存datasetなら version、無ければ create
@@ -400,7 +400,7 @@ def cmd_list(args):
         note = ""
         total = 0
         if os.path.exists(meta_p):
-            m = json.load(open(meta_p))
+            m = json.load(open(meta_p, encoding="utf-8"))
             total = sum(v["size"] for v in m["files"].values())
             note = m.get("note", "")
         print(f"{name}: {len(vers)}版 latest={os.path.basename(latest)} "
