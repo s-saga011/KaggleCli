@@ -22,9 +22,9 @@ python3 kbin.py auto --push
 
 | 実行マシン | 経路 | 所要 |
 |---|---|---|
-| Linux | **docker（linux/amd64、ホストを汚さない）**、無ければその場でビルド | 数分 |
-| Windows | **自機のWSL**、無ければdocker、どちらも無ければ `wsl --install` 試行 | 数分〜 |
-| Mac等 | GitHub Actionsに委譲（= `ci`。ビルドマシン不要）。`--backend docker` でRosettaビルドも可（数倍遅い） | 20〜30分 |
+| Linux | **docker（linux/amd64、ホストを汚さない）**、無ければその場でビルド | 実測19分(初回toolkit込)〜 |
+| Windows | **自機のWSL**、無ければdocker、どちらも無ければ `wsl --install` 試行 | 実測12分 |
+| Mac (Apple Silicon) | GitHub Actionsに委譲（= `ci`）。`--backend docker` でRosettaビルドも可 | ci実測72分 / Rosetta実測22分 |
 
 dockerバックエンドは `--platform linux/amd64` の ubuntu:22.04 コンテナでレシピを実行する。
 glibcがKaggleと同世代に固定され、CUDA toolkitがホストに入らないのが利点。

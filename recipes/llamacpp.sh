@@ -49,6 +49,8 @@ cmake --build build -j"$(nproc)" --target llama-bench llama-cli llama-server >> 
   echo "built_at: $(date -Iseconds)"
   echo "targets: llama-bench llama-cli llama-server"
 } > build/bin/BUILDINFO.txt
-./build/bin/llama-bench --help > /dev/null && echo "smoke: llama-bench OK"
+# GPU/ドライバの無いビルド環境(dockerコンテナ等)ではlibcuda.so.1が無く起動不可=正常
+./build/bin/llama-bench --help > /dev/null 2>&1 && echo "smoke: llama-bench OK" \
+  || echo "smoke: skipped (no GPU driver in build env — Kaggle側で確認を)"
 tar czf "$KBIN_OUT" -C build/bin .
 echo "BUILD_DONE $KBIN_OUT"

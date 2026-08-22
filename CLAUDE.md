@@ -76,6 +76,8 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
 - kernel-metadata.jsonの`id`と`title`のslugが食い違うと、**Kaggleはtitle由来のslugを採用する**（idは無視され警告のみ）。titleはidにslug一致させること
 - **dataset version更新直後にkernelを実行すると旧版がマウントされることがある**（サーバー側のzip展開処理待ち、511MBで数分）。push後は数分置いてからkernelを実行。どの版を掴んだかはBUILDINFO.txtのbuilt_onで確認できる（これがBUILDINFO同梱を必須にする理由でもある）
 - Windows実行の互換注意: `os.symlink`は非管理者不可(→LATESTファイル代替実装済み)、`open()`はcp932デフォルト(→全テキストI/OでUTF-8明示済み)、`wsl.exe`の出力はUTF-16LE
+- **`bash -s`でスクリプトをstdin供給してはいけない**。bashは遅延読みするため、子プロセス(make等)がstdinを横取りすると「途中でrc=0終了」「断片の誤実行(rm -rf再発火)」がタイミング依存で起きる。全経路 `cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh` 方式に統一済み(x299で実害2パターン確認)
+- GPUの無いビルド環境(dockerコンテナ/Actionsランナー)ではlibcuda.so.1が無くバイナリを起動できない=スモークテスト不可が正常。実行確認はKaggle側のbintest kernelで行う
 
 ## 変更時の作法
 
