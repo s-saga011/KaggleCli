@@ -187,6 +187,83 @@ def cmd_build(args):
         cmd_push(args)
 
 
+def _wsl_list():
+    """wsl -l -q のディストロ一覧。Windowsのwsl.exeはUTF-16LEを吐く点に注意"""
+    try:
+        r = subprocess.run(["wsl", "-l", "-q"], capture_output=True)
+    except FileNotFoundError:
+        return None
+    if r.returncode != 0:
+        return None
+    raw = r.stdout
+    text = raw.decode("utf-16-le", errors="ignore") if b"\x00" in raw \
+        else raw.decode(errors="ignore")
+    return [l.strip() for l in text.splitlines() if l.strip()]
+
+
+def _local_build(recipe_body, name, wsl_distro=None):
+    """このマシン上でレシピを実行して成果物パスを返す（Linux直 or 自機WSL）"""
+    if wsl_distro:
+        tmpdir = os.environ.get("TEMP", r"C:\Temp")
+        win_out = os.path.join(tmpdir, f"kbin-{name}.tar.gz")
+        w = win_out.replace("\\", "/")
+        kbin_out = f"/mnt/{w[0].lower()}{w[2:]}"  # C:/foo -> /mnt/c/foo
+        cmd = ["wsl", "-d", wsl_distro, "-u", "root", "--", "bash", "-s"]
+        out_path = win_out
+    else:
+        out_path = f"/tmp/kbin-{name}.tar.gz"
+        kbin_out = out_path
+        cmd = ["bash", "-s"] if os.geteuid() == 0 else ["sudo", "bash", "-s"]
+    script = f"export KBIN_OUT='{kbin_out}'\n" + recipe_body
+    print(f"[auto] ローカルビルド: {' '.join(cmd)} -> {out_path}")
+    r = subprocess.run(cmd, input=script.encode())
+    if r.returncode != 0 or not os.path.exists(out_path):
+        sys.exit(f"ローカルビルド失敗 (rc={r.returncode})。/tmp/kbin-*.log を確認")
+    return out_path
+
+
+def cmd_auto(args):
+    """実行マシンに応じて最速のビルド経路を自動選択する
+
+    Windows: 自機のWSLでビルド（GitHub Actionsより速い）。WSLが無ければ
+             `wsl --install` を試行（要管理者権限・再起動）、不可ならciへ。
+    Linux:   その場でビルド（root or sudo。CUDA toolkit自動導入込み）。
+    その他(Mac等): CUDAツールチェーンが無いので ci (GitHub Actions) へ委譲。
+    """
+    name = args.name
+    if sys.platform == "win32":
+        distro = os.environ.get("KBIN_WSL_DISTRO", "Ubuntu")
+        distros = _wsl_list()
+        if distros and any(distro.lower() in d.lower() for d in distros):
+            recipe_body = load_recipe(args.recipe)
+            path = _local_build(recipe_body, name, wsl_distro=distro)
+            store_file(path, name, note=args.note or
+                       f"kbin auto: local WSL({distro}) recipe={args.recipe}")
+        elif distros is not None:
+            print(f"[auto] WSLはあるが {distro} が無い → インストール試行")
+            r = subprocess.run(["wsl", "--install", "-d", distro])
+            sys.exit("WSLディストロのインストールを開始した。完了後(要再起動の場合あり)に再実行を"
+                     if r.returncode == 0 else
+                     "WSLインストール失敗 → `kbin ci --push` (GitHub Actions) を使うか手動でWSLを導入")
+        else:
+            print("[auto] WSLが無い → wsl --install を試行（管理者権限が必要）")
+            r = subprocess.run(["wsl", "--install"])
+            sys.exit("WSLのインストールを開始した。再起動後に再実行を" if r.returncode == 0
+                     else "WSLインストール不可 → `kbin ci --push` (GitHub Actions) を推奨")
+    elif sys.platform.startswith("linux"):
+        recipe_body = load_recipe(args.recipe)
+        path = _local_build(recipe_body, name)
+        store_file(path, name, note=args.note or
+                   f"kbin auto: local linux recipe={args.recipe}")
+    else:
+        print(f"[auto] {sys.platform} ではローカルビルド不可 → GitHub Actions (ci) に委譲")
+        args.workflow = getattr(args, "workflow", None) or "build-llamacpp"
+        args.artifact = getattr(args, "artifact", None) or "llamacpp-bin"
+        return cmd_ci(args)
+    if args.push:
+        cmd_push(args)
+
+
 def cmd_ci(args):
     """GitHub Actionsでビルド→artifact回収→登録。ビルドマシン不要（推奨経路）
 
@@ -306,6 +383,15 @@ def main():
     p.add_argument("name", help="バックアップ名")
     p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
     p.set_defaults(fn=cmd_import)
+
+    p = sub.add_parser("auto", help="実行マシンで最速経路を自動選択（Win=自機WSL / Linux=直 / 他=ci）")
+    p.add_argument("--recipe", default="llamacpp", help="recipes/<recipe>.sh")
+    p.add_argument("--name", default="llamacpp-cuda", help="バックアップ名")
+    p.add_argument("--note")
+    p.add_argument("--workflow", default="build-llamacpp", help="ciフォールバック時のworkflow")
+    p.add_argument("--artifact", default="llamacpp-bin", help="ciフォールバック時のartifact名")
+    p.add_argument("--push", action="store_true", help="登録後そのままdatasetへpush")
+    p.set_defaults(fn=cmd_auto)
 
     p = sub.add_parser("ci", help="GitHub Actionsでビルド→回収→登録（ビルドマシン不要）")
     p.add_argument("--workflow", default="build-llamacpp", help="workflowファイル名")

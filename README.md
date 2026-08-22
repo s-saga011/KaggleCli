@@ -12,21 +12,29 @@ Kaggle側はdatasetから数秒で復元するだけにする。
 
 本体は `kbin.py` 1ファイル。依存は kaggle CLI と gh CLI（どちらも認証済み）のみ。
 
-## クイックスタート（GitHub Actions、ビルドマシン不要）
+## クイックスタート
 
 ```bash
-python3 kbin.py ci --push
+python3 kbin.py auto --push
 ```
 
-これだけで GitHub Actionsでビルド（約20〜30分）→ artifact回収 → ローカルバックアップ →
-Kaggle dataset `<user>/kbin-llamacpp-cuda` 作成まで完走する。
+`auto` が実行マシンを見て最速経路を選ぶ:
 
-git cloneすら不要のワンライナー版:
+| 実行マシン | 経路 | 所要 |
+|---|---|---|
+| Windows | **自機のWSLでビルド**（無ければ `wsl --install` を試行、不可ならActionsへ） | 数分〜 |
+| Linux | その場でビルド（CUDA toolkit自動導入込み） | 数分 |
+| Mac等 | GitHub Actionsに委譲（= `ci`。ビルドマシン不要） | 20〜30分 |
+
+どの経路でも ローカルバックアップ → Kaggle dataset `<user>/kbin-llamacpp-cuda` 作成まで完走する。
+Actionsだけ使いたい場合は `python3 kbin.py ci --push`。
+
+git cloneすら不要のワンライナー版（レシピはGitHubから自動取得）:
 
 ```bash
 gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.github.raw" \
-  | python3 - ci --push
-# 公開後: curl -fsSL https://raw.githubusercontent.com/s-saga011/KaggleCli/main/kbin.py | python3 - ci --push
+  | python3 - auto --push
+# 公開後: curl -fsSL https://raw.githubusercontent.com/s-saga011/KaggleCli/main/kbin.py | python3 - auto --push
 ```
 
 利用側kernelでは `kernel-metadata.json` に `"dataset_sources": ["<user>/kbin-llamacpp-cuda"]`
@@ -56,7 +64,8 @@ gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.gi
 
 | コマンド | 動作 |
 |---|---|
-| `kbin.py ci [--workflow build-llamacpp] [--artifact llamacpp-bin] [--name n] [--push]` | **推奨**: Actionsでビルド→回収→登録。`--push`でdataset化まで |
+| `kbin.py auto [--recipe llamacpp] [--name n] [--push]` | **推奨**: 実行マシンで最速経路を自動選択（Win=自機WSL / Linux=直 / 他=ci） |
+| `kbin.py ci [--workflow build-llamacpp] [--artifact llamacpp-bin] [--name n] [--push]` | Actionsでビルド→回収→登録（ビルドマシン不要） |
 | `kbin.py build <recipe> --host <ssh先> [--wsl <distro> --exchange-dir <C:/...>] [--name n] [--push]` | 手元/リモートLinuxでビルド→回収→登録（オプション、速い） |
 | `kbin.py save <kernel> <name> [--all] [--note "..."]` | Kaggle kernel出力をローカル保存 |
 | `kbin.py import <file> <name> [--note "..."]` | ビルド済みtar.gzを取り込む |
