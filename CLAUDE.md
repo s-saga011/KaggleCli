@@ -28,6 +28,12 @@ python3 kbin.py push <name>
 python3 kbin.py import <tar.gz> <name> [--note "..."]
     # Kaggle外(x299 WSL2等)でビルドした成果物を取り込む。以降のpushは同じ
 
+python3 kbin.py build <recipe> --host <ssh先> [--wsl <distro> --exchange-dir <C:/...>] [--push]
+    # recipes/<recipe>.sh をssh先で実行→成果物回収→登録。--pushでdataset化まで
+    # レシピの契約: 成果物tar.gzを $KBIN_OUT に書く。冗長ログはリモート/tmpに逃がす
+    # 例: python3 kbin.py build llamacpp --host x299 --wsl Ubuntu \
+    #        --exchange-dir C:/Users/youei/work/AI/kbuild --name llamacpp-cuda --push
+
 python3 kbin.py list        # バックアップ一覧（版数・サイズ・note）
 python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に出す
 ```
@@ -45,7 +51,10 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
 
 ## ハマりどころ（重要）
 
+- **Kaggleはdataset作成時にtar.gz/zipを自動展開する**（2026-08確認）。復元コードは「展開後ディレクトリ」「生tar.gz」両対応にする（snippetは対応済み）
 - **datasetのファイルは実行権限が落ちる** → snippetのchmodを省略しない
+- Ubuntu 22.04のapt標準nvcc(11.5)はgcc 11と非互換（std_function.hのparameter packsバグ）→ recipes/llamacpp.shはCUDA 12.6を自動導入する
+- Windows+WSL2ホストへのssh実行はstdinパススルー可（`ssh host "wsl -d Ubuntu -u root -- bash -s" < script`）。ただし**バイナリのssh stdout回収はPowerShellが壊すので不可** → 成果物はWindows側パス(--exchange-dir)経由でscp
 - **datasetマウントパスは新形式** `/kaggle/input/datasets/<owner>/<slug>/`（旧 `/kaggle/input/<slug>/` は404。2026-08確認）
 - バイナリはビルド時のKaggleイメージ（glibc/CUDAランタイム）に依存。イメージ更新で動かなくなったら再ビルドして save し直す
 - GPUアーキ違いに注意: T4=sm75, P100=sm60。両方で使うなら `-DCMAKE_CUDA_ARCHITECTURES="60;75"` のfatビルドにする

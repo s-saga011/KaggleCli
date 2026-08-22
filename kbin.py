@@ -85,28 +85,75 @@ def cmd_save(args):
         print(f"OK: {dest}")
 
 
+def store_file(path, name, note=None, source=None):
+    """1ファイルをバックアップに登録し latest を更新（import/build共通）"""
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = os.path.join(KBIN_HOME, name, stamp)
+    os.makedirs(dest, exist_ok=True)
+    shutil.copy2(path, dest)
+    base = os.path.basename(path)
+    meta = {"name": name, "source": source or os.path.abspath(path),
+            "saved_at": stamp,
+            "files": {base: {"size": os.path.getsize(path),
+                             "sha256": sha256(path)}}}
+    if note:
+        meta["note"] = note
+    with open(os.path.join(dest, "meta.json"), "w") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    latest = os.path.join(KBIN_HOME, name, "latest")
+    if os.path.islink(latest):
+        os.unlink(latest)
+    os.symlink(stamp, latest)
+    print(f"OK: {dest} ({os.path.getsize(path) / 2**20:.1f} MB)")
+
+
 def cmd_import(args):
     """ローカルファイル(x299等でビルドしたtar.gz)をバックアップに取り込む"""
     if not os.path.exists(args.file):
         sys.exit(f"ファイルが無い: {args.file}")
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    dest = os.path.join(KBIN_HOME, args.name, stamp)
-    os.makedirs(dest, exist_ok=True)
-    shutil.copy2(args.file, dest)
-    base = os.path.basename(args.file)
-    meta = {"name": args.name, "source": os.path.abspath(args.file),
-            "saved_at": stamp,
-            "files": {base: {"size": os.path.getsize(args.file),
-                             "sha256": sha256(args.file)}}}
-    if args.note:
-        meta["note"] = args.note
-    with open(os.path.join(dest, "meta.json"), "w") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
-    latest = os.path.join(KBIN_HOME, args.name, "latest")
-    if os.path.islink(latest):
-        os.unlink(latest)
-    os.symlink(stamp, latest)
-    print(f"OK: {dest} ({os.path.getsize(args.file) / 2**20:.1f} MB)")
+    store_file(args.file, args.name, note=args.note)
+
+
+def cmd_build(args):
+    """レシピをビルドホストでssh実行し、成果物を回収してバックアップ登録する
+
+    レシピの契約: recipes/<recipe>.sh は $KBIN_OUT に成果物tar.gzを書く。
+    冗長なビルドログはリモート側の /tmp/kbin-*.log に逃がす（ssh出力を細く保つ）。
+    WSL2ホスト(Windows)の場合は --wsl <distro> と --exchange-dir <C:/...> を指定:
+    成果物はWindows側パス経由で受け渡し（WSL内/tmpはscpから見えないため）。
+    """
+    recipe = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "recipes", f"{args.recipe}.sh")
+    if not os.path.exists(recipe):
+        sys.exit(f"レシピが無い: {recipe}")
+    name = args.name or args.recipe
+    if args.wsl:
+        if not args.exchange_dir:
+            sys.exit("--wsl には --exchange-dir (Windows側パス 例 C:/Users/x/work) が必要")
+        win = args.exchange_dir.replace("\\", "/").rstrip("/")
+        mnt = f"/mnt/{win[0].lower()}{win[2:]}"  # C:/foo -> /mnt/c/foo
+        kbin_out = f"{mnt}/kbin-{name}.tar.gz"
+        remote_cmd = f"wsl -d {args.wsl} -u root -- bash -s"
+        scp_src = f"{args.host}:{win}/kbin-{name}.tar.gz"
+    else:
+        kbin_out = f"/tmp/kbin-{name}.tar.gz"
+        remote_cmd = "bash -s"
+        scp_src = f"{args.host}:{kbin_out}"
+    script = f"export KBIN_OUT='{kbin_out}'\n" + open(recipe).read()
+    print(f"[build] host={args.host} recipe={args.recipe} out={kbin_out}")
+    r = subprocess.run(["ssh", args.host, remote_cmd],
+                       input=script.encode(), check=False)
+    if r.returncode != 0:
+        sys.exit(f"リモートビルド失敗 (rc={r.returncode})。リモートの/tmp/kbin-*.logを確認")
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as tmp:
+        local = os.path.join(tmp, f"kbin-{name}.tar.gz")
+        sh(["scp", "-q", scp_src, local])
+        note = args.note or f"kbin build: recipe={args.recipe} host={args.host}"
+        store_file(local, name, note=note, source=f"{args.host}:{args.recipe}")
+    if args.push:
+        args.name = name
+        cmd_push(args)
 
 
 def cmd_push(args):
@@ -196,6 +243,16 @@ def main():
     p.add_argument("name", help="バックアップ名")
     p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
     p.set_defaults(fn=cmd_import)
+
+    p = sub.add_parser("build", help="レシピをssh先でビルド→回収→登録")
+    p.add_argument("recipe", help="recipes/<recipe>.sh の名前 (例: llamacpp)")
+    p.add_argument("--host", required=True, help="ssh configのホスト名")
+    p.add_argument("--name", help="バックアップ名 (省略時はレシピ名)")
+    p.add_argument("--wsl", metavar="DISTRO", help="WindowsホストのWSL2で実行 (例: Ubuntu)")
+    p.add_argument("--exchange-dir", help="--wsl時のWindows側受け渡しパス (例: C:/Users/x/work/AI/kbuild)")
+    p.add_argument("--note", help="メモ (省略時は recipe/host を自動記録)")
+    p.add_argument("--push", action="store_true", help="登録後そのままdatasetへpush")
+    p.set_defaults(fn=cmd_build)
 
     p = sub.add_parser("push", help="latestをKaggle datasetへアップロード")
     p.add_argument("name")
