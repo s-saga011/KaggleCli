@@ -156,19 +156,26 @@ def cmd_list(args):
 
 
 def cmd_snippet(args):
+    # 注意: Kaggleはdataset作成時にtar.gz/zipを自動展開する(2026-08確認)。
+    # 展開後ディレクトリ・生tar.gz・単体ファイルの3形態すべてに対応する
     user = kaggle_user()
     print(f"""# --- notebook側: kbin-{args.name} からバイナリ復元 ---
 # kernel-metadata.json: "dataset_sources": ["{user}/kbin-{args.name}"]
 import glob, os, subprocess
 SRC = "/kaggle/input/datasets/{user}/kbin-{args.name}"
+if not os.path.isdir(SRC):
+    SRC = "/kaggle/input/kbin-{args.name}"  # 旧形式パス
 os.makedirs("/tmp/bin", exist_ok=True)
 for f in glob.glob(f"{{SRC}}/*"):
-    if f.endswith((".tar.gz", ".tgz")):
+    if os.path.basename(f) == "meta.json":
+        continue
+    if os.path.isdir(f):  # Kaggleがtar.gzを自動展開した場合はディレクトリになる
+        subprocess.run(f"cp -r '{{f}}/.' /tmp/bin/", shell=True, check=True)
+    elif f.endswith((".tar.gz", ".tgz")):
         subprocess.run(["tar", "xzf", f, "-C", "/tmp/bin"], check=True)
     else:
         subprocess.run(["cp", f, "/tmp/bin/"], check=True)
-subprocess.run("chmod +x /tmp/bin/* 2>/dev/null; chmod +x /tmp/bin/**/* 2>/dev/null",
-               shell=True)
+subprocess.run("chmod -R +x /tmp/bin", shell=True)
 print(os.listdir("/tmp/bin"))""")
 
 
