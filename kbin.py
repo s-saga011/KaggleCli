@@ -114,6 +114,34 @@ def cmd_import(args):
     store_file(args.file, args.name, note=args.note)
 
 
+def load_recipe(name):
+    """レシピ解決: ①スクリプト隣のrecipes/ ②gh api ③raw.githubusercontent
+    ②③のおかげで `gh api .../kbin.py | python3 - build ...` のワンライナーでも動く"""
+    try:
+        base = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        base = ""
+    local = os.path.join(base, "recipes", f"{name}.sh")
+    if base and os.path.exists(local):
+        return open(local).read()
+    repo = os.environ.get("KBIN_REPO", "s-saga011/KaggleCli")
+    r = subprocess.run(["gh", "api", f"repos/{repo}/contents/recipes/{name}.sh",
+                        "-H", "Accept: application/vnd.github.raw"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        print(f"[recipe] gh api {repo}/recipes/{name}.sh")
+        return r.stdout
+    import urllib.request
+    url = f"https://raw.githubusercontent.com/{repo}/main/recipes/{name}.sh"
+    try:
+        body = urllib.request.urlopen(url, timeout=15).read().decode()
+        print(f"[recipe] {url}")
+        return body
+    except Exception:
+        sys.exit(f"レシピ取得失敗: {name}（local/gh api/raw いずれも不可。"
+                 f"private repoの場合は gh auth login が必要）")
+
+
 def cmd_build(args):
     """レシピをビルドホストでssh実行し、成果物を回収してバックアップ登録する
 
@@ -122,10 +150,7 @@ def cmd_build(args):
     WSL2ホスト(Windows)の場合は --wsl <distro> と --exchange-dir <C:/...> を指定:
     成果物はWindows側パス経由で受け渡し（WSL内/tmpはscpから見えないため）。
     """
-    recipe = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          "recipes", f"{args.recipe}.sh")
-    if not os.path.exists(recipe):
-        sys.exit(f"レシピが無い: {recipe}")
+    recipe_body = load_recipe(args.recipe)
     name = args.name or args.recipe
     if args.wsl:
         if not args.exchange_dir:
@@ -139,7 +164,7 @@ def cmd_build(args):
         kbin_out = f"/tmp/kbin-{name}.tar.gz"
         remote_cmd = "bash -s"
         scp_src = f"{args.host}:{kbin_out}"
-    script = f"export KBIN_OUT='{kbin_out}'\n" + open(recipe).read()
+    script = f"export KBIN_OUT='{kbin_out}'\n" + recipe_body
     print(f"[build] host={args.host} recipe={args.recipe} out={kbin_out}")
     r = subprocess.run(["ssh", args.host, remote_cmd],
                        input=script.encode(), check=False)
