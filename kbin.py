@@ -83,12 +83,34 @@ def cmd_save(args):
             meta["note"] = args.note
         with open(os.path.join(dest, "meta.json"), "w") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
-        # latest を更新
-        latest = os.path.join(KBIN_HOME, args.name, "latest")
+        set_latest(args.name, stamp)
+        print(f"OK: {dest}")
+
+
+def set_latest(name, stamp):
+    """latestポインタ更新。symlink不可環境(Windows非管理者)はLATESTファイルで代替"""
+    d = os.path.join(KBIN_HOME, name)
+    latest = os.path.join(d, "latest")
+    try:
         if os.path.islink(latest):
             os.unlink(latest)
         os.symlink(stamp, latest)
-        print(f"OK: {dest}")
+    except OSError:
+        with open(os.path.join(d, "LATEST"), "w") as f:
+            f.write(stamp)
+
+
+def get_latest(name):
+    """latestの実体ディレクトリを返す（symlink or LATESTファイル）。無ければNone"""
+    d = os.path.join(KBIN_HOME, name)
+    latest = os.path.join(d, "latest")
+    if os.path.exists(latest):
+        return os.path.realpath(latest)
+    lf = os.path.join(d, "LATEST")
+    if os.path.exists(lf):
+        p = os.path.join(d, open(lf).read().strip())
+        return p if os.path.isdir(p) else None
+    return None
 
 
 def store_file(path, name, note=None, source=None):
@@ -106,10 +128,7 @@ def store_file(path, name, note=None, source=None):
         meta["note"] = note
     with open(os.path.join(dest, "meta.json"), "w") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
-    latest = os.path.join(KBIN_HOME, name, "latest")
-    if os.path.islink(latest):
-        os.unlink(latest)
-    os.symlink(stamp, latest)
+    set_latest(name, stamp)
     print(f"OK: {dest} ({os.path.getsize(path) / 2**20:.1f} MB)")
 
 
@@ -344,9 +363,9 @@ def cmd_ci(args):
 
 def cmd_push(args):
     """ローカルバックアップ(latest)をKaggle datasetへ"""
-    src = os.path.join(KBIN_HOME, args.name, "latest")
-    if not os.path.exists(src):
-        sys.exit(f"バックアップが無い: {src}（先に kbin save）")
+    src = get_latest(args.name)
+    if not src:
+        sys.exit(f"バックアップが無い: {args.name}（先に kbin save/build/import）")
     user = kaggle_user()
     ds_id = f"{user}/kbin-{args.name}"
     with tempfile.TemporaryDirectory() as tmp:
@@ -375,8 +394,8 @@ def cmd_list(args):
         d = os.path.join(KBIN_HOME, name)
         if not os.path.isdir(d):
             continue
-        vers = sorted(v for v in os.listdir(d) if v != "latest")
-        latest = os.path.realpath(os.path.join(d, "latest")) if vers else ""
+        vers = sorted(v for v in os.listdir(d) if v not in ("latest", "LATEST"))
+        latest = get_latest(name) or ""
         meta_p = os.path.join(latest, "meta.json")
         note = ""
         total = 0
