@@ -18,13 +18,16 @@ Kaggle側はdatasetから数秒で復元するだけにする。
 python3 kbin.py auto --push
 ```
 
-`auto` が実行マシンを見て最速経路を選ぶ:
+`auto` が実行マシンを見て最速経路を選ぶ（`--backend` で固定も可）:
 
 | 実行マシン | 経路 | 所要 |
 |---|---|---|
-| Windows | **自機のWSLでビルド**（無ければ `wsl --install` を試行、不可ならActionsへ） | 数分〜 |
-| Linux | その場でビルド（CUDA toolkit自動導入込み） | 数分 |
-| Mac等 | GitHub Actionsに委譲（= `ci`。ビルドマシン不要） | 20〜30分 |
+| Linux | **docker（linux/amd64、ホストを汚さない）**、無ければその場でビルド | 数分 |
+| Windows | **自機のWSL**、無ければdocker、どちらも無ければ `wsl --install` 試行 | 数分〜 |
+| Mac等 | GitHub Actionsに委譲（= `ci`。ビルドマシン不要）。`--backend docker` でRosettaビルドも可（数倍遅い） | 20〜30分 |
+
+dockerバックエンドは `--platform linux/amd64` の ubuntu:22.04 コンテナでレシピを実行する。
+glibcがKaggleと同世代に固定され、CUDA toolkitがホストに入らないのが利点。
 
 どの経路でも ローカルバックアップ → Kaggle dataset `<user>/kbin-llamacpp-cuda` 作成まで完走する。
 Actionsだけ使いたい場合は `python3 kbin.py ci --push`。
