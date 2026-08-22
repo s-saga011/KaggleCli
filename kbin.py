@@ -13,6 +13,7 @@ dataset id: <user>/kbin-<name>
 """
 import argparse
 import datetime
+import glob as _glob
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 KBIN_HOME = os.environ.get("KBIN_HOME", os.path.expanduser("~/kaggle-bincache"))
 
@@ -181,6 +183,38 @@ def cmd_build(args):
         cmd_push(args)
 
 
+def cmd_ci(args):
+    """GitHub Actionsでビルド→artifact回収→登録。ビルドマシン不要（推奨経路）
+
+    workflowはubuntu-22.04ランナー上でGPU無しクロスビルドする（nvccはコード生成に
+    GPU不要、リンクはtoolkit同梱スタブで足りる）。所要約20-30分。
+    """
+    repo = os.environ.get("KBIN_REPO", "s-saga011/KaggleCli")
+    sh(["gh", "workflow", "run", args.workflow, "--repo", repo])
+    print("[ci] dispatch完了、run idを取得中...")
+    time.sleep(8)
+    rid = subprocess.check_output(
+        ["gh", "run", "list", "--repo", repo, "--workflow", args.workflow,
+         "--limit", "1", "--json", "databaseId", "--jq", ".[0].databaseId"],
+        text=True).strip()
+    print(f"[ci] run {rid} を監視（ビルド20-30分。Ctrl+Cで中断しても "
+          f"`gh run watch {rid}` で再開可）")
+    r = subprocess.run(["gh", "run", "watch", rid, "--repo", repo, "--exit-status"])
+    if r.returncode != 0:
+        sys.exit(f"CIビルド失敗: gh run view {rid} --repo {repo} --log-failed で確認")
+    with tempfile.TemporaryDirectory() as tmp:
+        sh(["gh", "run", "download", rid, "--repo", repo,
+            "-n", args.artifact, "-D", tmp])
+        files = sorted(_glob.glob(os.path.join(tmp, "**", "*.tar.gz"),
+                                  recursive=True))
+        if not files:
+            sys.exit(f"artifact {args.artifact} にtar.gzが無い")
+        note = args.note or f"kbin ci: {args.workflow} run {rid} (github-actions)"
+        store_file(files[0], args.name, note=note, source=f"actions:{repo}#{rid}")
+    if args.push:
+        cmd_push(args)
+
+
 def cmd_push(args):
     """ローカルバックアップ(latest)をKaggle datasetへ"""
     src = os.path.join(KBIN_HOME, args.name, "latest")
@@ -268,6 +302,14 @@ def main():
     p.add_argument("name", help="バックアップ名")
     p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
     p.set_defaults(fn=cmd_import)
+
+    p = sub.add_parser("ci", help="GitHub Actionsでビルド→回収→登録（ビルドマシン不要）")
+    p.add_argument("--workflow", default="build-llamacpp", help="workflowファイル名")
+    p.add_argument("--artifact", default="llamacpp-bin", help="回収するartifact名")
+    p.add_argument("--name", default="llamacpp-cuda", help="バックアップ名")
+    p.add_argument("--note", help="メモ (省略時はrun情報を自動記録)")
+    p.add_argument("--push", action="store_true", help="登録後そのままdatasetへpush")
+    p.set_defaults(fn=cmd_ci)
 
     p = sub.add_parser("build", help="レシピをssh先でビルド→回収→登録")
     p.add_argument("recipe", help="recipes/<recipe>.sh の名前 (例: llamacpp)")

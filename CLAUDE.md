@@ -8,8 +8,10 @@ Kaggleのバッチ実行はコンテナが毎回まっさらでビルドし直�
 
 本体は `kbin.py` 1ファイルのみ。`python3 kbin.py <cmd>` で実行（依存はkaggle CLIだけ）。
 
+**推奨経路はGitHub Actionsビルド（`kbin ci`、ビルドマシン不要）**。手元マシンビルド（`kbin build`）は速いが（6分 vs 20-30分）ssh可能なLinux箱が要るオプション扱い。
+
 clone不要のワンライナーも可（レシピは gh api → raw の順で自動取得）:
-`gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.github.raw" | python3 - build llamacpp --host x299 --wsl Ubuntu --exchange-dir C:/Users/youei/work/AI/kbuild --push`
+`gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.github.raw" | python3 - ci --push`
 
 ## 前提
 
@@ -20,6 +22,10 @@ clone不要のワンライナーも可（レシピは gh api → raw の順で�
 ## コマンド
 
 ```bash
+python3 kbin.py ci [--workflow build-llamacpp] [--artifact llamacpp-bin] [--name n] [--push]
+    # 推奨: GitHub Actions(ubuntu-22.04, GPU無し)でビルド→artifact回収→登録
+    # 例: python3 kbin.py ci --push   (これ1発でdataset作成まで完走、約20-30分)
+
 python3 kbin.py save <kernel_ref> <name> [--all] [--note "..."]
     # kernel出力をDLしてローカル保存。デフォルトはtar.gz/tgz/zipのみ拾う
     # 例: python3 kbin.py save shosaga/llamacpp-bench-t4x2 llamacpp-cuda \
