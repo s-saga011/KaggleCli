@@ -74,6 +74,8 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
   （`GGML_CUDA_NO_VMM=ON` でも回避できるが `-sm row` が使えなくなる）
 - `--note` にcommit hash・arch・static/sharedを必ず残す。後から「このバイナリ何だっけ」を防ぐ
 - kernel-metadata.jsonの`id`と`title`のslugが食い違うと、**Kaggleはtitle由来のslugを採用する**（idは無視され警告のみ）。titleはidにslug一致させること
+- **dataset version更新直後にkernelを実行すると旧版がマウントされることがある**（サーバー側のzip展開処理待ち、511MBで数分）。push後は数分置いてからkernelを実行。どの版を掴んだかはBUILDINFO.txtのbuilt_onで確認できる（これがBUILDINFO同梱を必須にする理由でもある）
+- Windows実行の互換注意: `os.symlink`は非管理者不可(→LATESTファイル代替実装済み)、`open()`はcp932デフォルト(→全テキストI/OでUTF-8明示済み)、`wsl.exe`の出力はUTF-16LE
 
 ## 変更時の作法
 
