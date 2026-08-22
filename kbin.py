@@ -183,11 +183,11 @@ def cmd_build(args):
         win = args.exchange_dir.replace("\\", "/").rstrip("/")
         mnt = f"/mnt/{win[0].lower()}{win[2:]}"  # C:/foo -> /mnt/c/foo
         kbin_out = f"{mnt}/kbin-{name}.tar.gz"
-        remote_cmd = f"wsl -d {args.wsl} -u root -- bash -s"
+        remote_cmd = f"wsl -d {args.wsl} -u root -- bash -c 'cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh'"
         scp_src = f"{args.host}:{win}/kbin-{name}.tar.gz"
     else:
         kbin_out = f"/tmp/kbin-{name}.tar.gz"
-        remote_cmd = "bash -s"
+        remote_cmd = "cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh"
         scp_src = f"{args.host}:{kbin_out}"
     script = f"export KBIN_OUT='{kbin_out}'\n" + recipe_body
     print(f"[build] host={args.host} recipe={args.recipe} out={kbin_out}")
@@ -243,7 +243,7 @@ def _docker_build(recipe_body, name):
     cmd = ["docker", "run", "--rm", "-i", "--platform", "linux/amd64",
            "-v", f"{out_dir}:/out",
            "-v", "kbin-apt-cache:/var/cache/apt/archives",
-           "ubuntu:22.04", "bash", "-s"]
+           "ubuntu:22.04", "bash", "-c", "cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh"]
     print(f"[docker] linux/amd64 ubuntu:22.04 でビルド -> {out_dir}")
     r = subprocess.run(cmd, input=script.encode())
     path = os.path.join(out_dir, f"kbin-{name}.tar.gz")
@@ -259,12 +259,14 @@ def _local_build(recipe_body, name, wsl_distro=None):
         win_out = os.path.join(tmpdir, f"kbin-{name}.tar.gz")
         w = win_out.replace("\\", "/")
         kbin_out = f"/mnt/{w[0].lower()}{w[2:]}"  # C:/foo -> /mnt/c/foo
-        cmd = ["wsl", "-d", wsl_distro, "-u", "root", "--", "bash", "-s"]
+        cmd = ["wsl", "-d", wsl_distro, "-u", "root", "--",
+               "bash", "-c", "cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh"]
         out_path = win_out
     else:
         out_path = f"/tmp/kbin-{name}.tar.gz"
         kbin_out = out_path
-        cmd = ["bash", "-s"] if os.geteuid() == 0 else ["sudo", "bash", "-s"]
+        runner = ["bash", "-c", "cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh"]
+        cmd = runner if os.geteuid() == 0 else ["sudo", *runner]
     script = f"export KBIN_OUT='{kbin_out}'\n" + recipe_body
     print(f"[auto] ローカルビルド: {' '.join(cmd)} -> {out_path}")
     r = subprocess.run(cmd, input=script.encode())
