@@ -46,10 +46,11 @@ gh api repos/s-saga011/KaggleCli/contents/kbin.py -H "Accept: application/vnd.gi
 ## フロー全体像
 
 ```
-[推奨] GitHub Actions ─── kbin ci
-[速い] 手元のLinux/WSL2 ── kbin build <recipe> --host <ssh先>   (10C/20T機で約6分)
-[手動] Kaggle上でビルド ── kbin save <kernel> <name>
-[持込] ビルド済みtar.gz ── kbin import <file> <name>
+[推奨] kbin auto ────────── 実行マシンで下記から最速を自動選択
+[CI]   GitHub Actions ───── kbin ci                              (設備ゼロ、20-30分)
+[速い] 手元/ssh先のLinux ── kbin build <recipe> --host <ssh先>   (10C/20T機で約6分)
+[手動] Kaggle上でビルド ─── kbin save <kernel> <name>
+[持込] ビルド済みtar.gz ─── kbin import <file> <name>
                   │
                   ▼
      ~/kaggle-bincache/<name>/<日時>/   ← ローカル正本（版管理つき）
