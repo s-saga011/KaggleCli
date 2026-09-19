@@ -12,6 +12,8 @@ Kaggle側はdatasetから数秒で復元するだけにする。
 
 本体は `kbin.py` 1ファイル。依存は kaggle CLI と gh CLI（どちらも認証済み）のみ。
 
+同じ理屈がそのまま **Google Colab** にも効く（→ [Colab でも使える](#colab-でも使える)）。Colab 無料枠は **2 コア**しかなく、Kaggle より CUDA ビルドが遅い。
+
 ## クイックスタート
 
 ```bash
@@ -94,12 +96,58 @@ python3 kbin.py build llamacpp --host x299 --wsl Ubuntu \
 - WSL2ホストは `--wsl <distro>` + `--exchange-dir`（WSL内/tmpはscpから見えない +
   PowerShell経由のバイナリstdoutは壊れるため、Windows側パスで受け渡し）
 
+## Colab でも使える
+
+焼いたバイナリは Kaggle 専用ではない。**Colab の T4 は Kaggle の T4 と同じ sm75** なので、
+`archs` に 75 が入っていればそのまま動く。3080/3090 でも確認したいなら `60;75;86` のまま使う。
+
+Colab 無料枠でビルドしない方がいい理由（2026-09-19 実測）:
+
+| | Colab 無料枠 | GitHub Actions |
+|---|---|---|
+| CPU | **2 コア** | 4 コア |
+| GPU | Tesla T4 15,360 MiB | 不要 |
+| RAM / ディスク | 12 GB / 189 GB 空き | — |
+| CUDA | 12.8（driver 580.82.07） | `cuda` 入力で選ぶ |
+
+Kaggle と違って GPU 枠の時間課金ではないが、2 コアで CUDA を焼くのは単純に遅い。
+焼くのは Actions、Colab は受け取るだけにする。
+
+### 配り方（Colab CLI）
+
+```bash
+uv tool install google-colab-cli
+colab new -s work --gpu T4          # 初回はブラウザで OAuth 承認
+gh run download <id> -R s-saga011/KaggleCli -n llamacpp-bin -D /tmp/kb
+colab upload -s work /tmp/kb/llamacpp-bin.tar.gz /content/llamacpp-bin.tar.gz
+colab exec -s work --timeout 300 -f restore.py   # 展開 + chmod
+colab stop -s work                  # ★止め忘れると VM が生き続ける
+```
+
+Kaggle dataset 経由と違って **tar.gz が自動展開されない**ので、自分で `tar xzf` する。
+実行権限も落ちるので `chmod +x` は同じく必要。
+
+### 上流以外（fork）を焼く
+
+`build-llamacpp.yml` は `repo` / `ref` 入力で任意の fork を焼ける。
+例: PQ2_0（Bonsai 系ternary量子化）は上流未マージで、PrismML の fork でしか読めない:
+
+```bash
+gh workflow run build-llamacpp.yml -R s-saga011/KaggleCli \
+  -f repo=PrismML-Eng/llama.cpp -f ref=prism \
+  -f archs="75;86" -f cuda=12-8 -f shared=OFF \
+  -f targets="llama-bench llama-cli llama-server llama-mtmd-cli"
+```
+
+BUILDINFO.txt に `repo` / `ref` が刻まれるので、後から上流版と取り違えない。
+
 ## ビルドレシピ/workflowの作法
 
 - 成果物は tar.gz 1個にまとめる（`tar czf ... -C build/bin .`）
 - アーキは P100=60 / T4=75 を含める。手元GPUで動作確認したいならそれも足す（例: `60;75;86`）
 - `-DBUILD_SHARED_LIBS=OFF`（スタティック）にすると.soの同梱・LD_LIBRARY_PATH不要
-- BUILDINFO.txt（commit/arch/フラグ/ビルド日）を同梱し、`--note` にも要点を残す
+- BUILDINFO.txt（commit/repo/ref/arch/フラグ/ビルド日）を同梱し、`--note` にも要点を残す
+- fork を焼くときは `repo` / `ref` 入力を使う。ファイルを分けない（分けると片方だけ直す事故が起きる）
 
 ## 注意
 
@@ -108,5 +156,10 @@ python3 kbin.py build llamacpp --host x299 --wsl Ubuntu \
 - Ubuntu 22.04のapt標準nvcc(11.5)はgcc 11と非互換 → レシピ/workflowはCUDA 12.6を導入して使う
 - バイナリはKaggleイメージ（glibc/CUDAランタイム）に依存。イメージ更新で壊れたら再ビルド
 - 保存先は `KBIN_HOME` 環境変数で変更可（デフォルト `~/kaggle-bincache`）
+- **Colab CLI は `jupyter-kernel-client` 1.0.x で壊れる**（2026-09-19）。1.0.0 で
+  `KernelClient` → `JupyterKernelClient` にリネームされたが colab-cli 側は旧名を参照しており、
+  `AttributeError: module 'jupyter_kernel_client' has no attribute 'KernelClient'` で落ちる。
+  対処: `uv tool install --force google-colab-cli --with "jupyter-kernel-client==0.15.0"`
+- Colab の `colab auth` は**セッションが無いと使えない**。先に `colab new` を実行すると OAuth が始まる
 
 実機検証: このリポジトリのバイナリ（arch 60;75;86, static, CUDA 12.6）はKaggle P100 / T4×2 の両方で動作確認済み。

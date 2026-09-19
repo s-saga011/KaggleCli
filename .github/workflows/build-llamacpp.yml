@@ -1,6 +1,7 @@
 name: build-llamacpp
 
 # GPU無しのGitHub-hostedランナーでllama.cpp CUDA fatバイナリをクロスビルドする。
+# repo/ref 入力で上流と PrismML fork(PQ2_0/Bonsai) の両方を焼ける。
 # nvccはコード生成にGPU不要、リンクはtoolkit同梱のstubs/libcuda.soで足りる。
 # ubuntu-22.04固定: Kaggleイメージとglibc世代(2.35)を合わせるため。latest(24.04)は不可。
 on:
@@ -13,6 +14,22 @@ on:
       cuda:
         description: "CUDA toolkit apt suffix (12-6 / 12-8 / 13-0). sm_120 needs >= 12-8"
         default: "12-6"
+        required: false
+      repo:
+        description: "Source repo. PrismML fork (PQ2_0/Bonsai) = PrismML-Eng/llama.cpp"
+        default: "ggml-org/llama.cpp"
+        required: false
+      ref:
+        description: "Branch/tag/commit. PrismML fork needs 'prism'. Empty = default branch"
+        default: ""
+        required: false
+      targets:
+        description: "cmake targets to build"
+        default: "llama-bench llama-cli llama-server"
+        required: false
+      shared:
+        description: "ON = shared libs (.so同梱). OFF = static single binaries"
+        default: "OFF"
         required: false
 
 jobs:
@@ -31,9 +48,13 @@ jobs:
           sudo rm -rf /var/cache/apt
           /usr/local/cuda/bin/nvcc --version | tail -1
 
-      - name: Clone llama.cpp
+      - name: Clone ${{ inputs.repo }} ${{ inputs.ref }}
         run: |
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          if [ -n "${{ inputs.ref }}" ]; then
+            git clone --depth 1 -b "${{ inputs.ref }}" "https://github.com/${{ inputs.repo }}" llama.cpp
+          else
+            git clone --depth 1 "https://github.com/${{ inputs.repo }}" llama.cpp
+          fi
           git -C llama.cpp log -1 --format='commit: %h %cd' --date=short
 
       - name: Build (fat ${{ inputs.archs }}, static)
@@ -41,8 +62,8 @@ jobs:
           cd llama.cpp
           export PATH=/usr/local/cuda/bin:$PATH
           cmake -B build -DGGML_CUDA=ON "-DCMAKE_CUDA_ARCHITECTURES=${{ inputs.archs }}" \
-            -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j"$(nproc)" --target llama-bench llama-cli llama-server
+            -DBUILD_SHARED_LIBS=${{ inputs.shared }} -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)" --target ${{ inputs.targets }}
 
       - name: Package
         run: |
@@ -50,11 +71,13 @@ jobs:
           COMMIT=$(git rev-parse --short HEAD)
           {
             echo "commit: $COMMIT"
+            echo "repo: ${{ inputs.repo }}"
+            echo "ref: ${{ inputs.ref }}"
             echo "arch: ${{ inputs.archs }}"
-            echo "flags: BUILD_SHARED_LIBS=OFF LLAMA_CURL=OFF Release"
+            echo "flags: BUILD_SHARED_LIBS=${{ inputs.shared }} LLAMA_CURL=OFF Release"
             echo "built_on: github-actions ubuntu-22.04 $(/usr/local/cuda/bin/nvcc --version | grep release)"
             echo "built_at: $(date -Iseconds)"
-            echo "targets: llama-bench llama-cli llama-server"
+            echo "targets: ${{ inputs.targets }}"
           } > build/bin/BUILDINFO.txt
           cat build/bin/BUILDINFO.txt
           tar czf "$GITHUB_WORKSPACE/llamacpp-bin.tar.gz" -C build/bin .
