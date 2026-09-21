@@ -127,6 +127,30 @@ colab stop -s work                  # ★止め忘れると VM が生き続け�
 Kaggle dataset 経由と違って **tar.gz が自動展開されない**ので、自分で `tar xzf` する。
 実行権限も落ちるので `chmod +x` は同じく必要。
 
+### Release にすると認証なしで落とせる
+
+**Artifact は public リポジトリでも API に認証が要る**（実測 HTTP 401）。
+つまり Colab のセルから直接は落とせず、gh 認証済みのマシンを 1 台経由する必要がある。
+
+`release` 入力にタグ名を入れると Release asset として公開する。
+**Release は認証不要**なので、そのまま `wget` できる:
+
+```bash
+gh workflow run build-llamacpp.yml \
+  -f archs="75;86" -f cuda=12-8 -f release=llamacpp-sm75-86
+```
+
+```python
+# Colab のセル。gh も kaggle 認証も要らない
+!wget -q https://github.com/<you>/KaggleCli/releases/download/llamacpp-sm75-86/llamacpp-bin.tar.gz
+!mkdir -p bin && tar xzf llamacpp-bin.tar.gz -C bin && chmod +x bin/llama-*
+```
+
+`release` を空にすれば従来どおり Artifact のみ（保持 14 日）。Release は無期限。
+
+**この経路はブラウザだけで完結する。** GitHub の Actions タブから
+`Run workflow` を押し、フォームに入力するだけで、ローカルマシンも gh CLI も要らない。
+
 ### 上流以外（fork）を焼く
 
 `build-llamacpp.yml` は `repo` / `ref` 入力で任意の fork を焼ける。

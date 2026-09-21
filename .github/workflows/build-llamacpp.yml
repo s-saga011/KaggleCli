@@ -31,10 +31,16 @@ on:
         description: "ON = shared libs (.so同梱). OFF = static single binaries"
         default: "OFF"
         required: false
+      release:
+        description: "タグ名を入れるとRelease化する(例 llamacpp-sm75-86)。空ならArtifactのみ。Releaseは認証不要でDLできるのでColab等から直接wgetできる"
+        default: ""
+        required: false
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write        # inputs.release 指定時に Release を作るため
     steps:
       - name: Disk before
         run: df -h / | tail -1
@@ -89,3 +95,25 @@ jobs:
           name: llamacpp-bin
           path: llamacpp-bin.tar.gz
           retention-days: 14
+
+      # Artifact は public リポジトリでも API に認証が要る(401)ので、Colab の
+      # セルから直接は落とせない。Release asset は認証不要なので `wget` 一発で済む。
+      # 保持期間も Artifact の 14 日に対して無期限。
+      - name: Release (inputs.release にタグ名がある時だけ)
+        if: inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd llama.cpp
+          cp LICENSE "$GITHUB_WORKSPACE/LICENSE-llama.cpp" 2>/dev/null || true
+          cd "$GITHUB_WORKSPACE"
+          gh release create "${{ inputs.release }}" \
+            llamacpp-bin.tar.gz \
+            $([ -f LICENSE-llama.cpp ] && echo LICENSE-llama.cpp) \
+            --title "${{ inputs.release }}" \
+            --notes "$(cat llama.cpp/build/bin/BUILDINFO.txt)
+
+            無保証。自己責任で使うこと。
+            元のライセンスは同梱の LICENSE-llama.cpp を参照。" \
+          || gh release upload "${{ inputs.release }}" llamacpp-bin.tar.gz --clobber
+          gh release view "${{ inputs.release }}" --json url -q .url
