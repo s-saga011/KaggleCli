@@ -86,8 +86,8 @@ Linux箱（WSL2可）がsshで見えるなら、4vCPUのActionsランナーよ�
 ```bash
 python3 kbin.py build llamacpp --host <linux箱> --name llamacpp-cuda --push
 # Windows+WSL2ホストの場合
-python3 kbin.py build llamacpp --host x299 --wsl Ubuntu \
-  --exchange-dir C:/Users/youei/work/AI/kbuild --name llamacpp-cuda --push
+python3 kbin.py build llamacpp --host linuxpc --wsl Ubuntu \
+  --exchange-dir C:/Users/<you>/work/AI/kbuild --name llamacpp-cuda --push
 ```
 
 - レシピ = `recipes/<name>.sh`。契約は「成果物tar.gzを `$KBIN_OUT` に書く」だけ。

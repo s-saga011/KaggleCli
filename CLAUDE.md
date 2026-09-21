@@ -37,13 +37,13 @@ python3 kbin.py push <name>
     # latest版を dataset <user>/kbin-<name> へ。既存ならversion、新規ならcreate
 
 python3 kbin.py import <tar.gz> <name> [--note "..."]
-    # Kaggle外(x299 WSL2等)でビルドした成果物を取り込む。以降のpushは同じ
+    # Kaggle外(linuxpc WSL2等)でビルドした成果物を取り込む。以降のpushは同じ
 
 python3 kbin.py build <recipe> --host <ssh先> [--wsl <distro> --exchange-dir <C:/...>] [--push]
     # recipes/<recipe>.sh をssh先で実行→成果物回収→登録。--pushでdataset化まで
     # レシピの契約: 成果物tar.gzを $KBIN_OUT に書く。冗長ログはリモート/tmpに逃がす
-    # 例: python3 kbin.py build llamacpp --host x299 --wsl Ubuntu \
-    #        --exchange-dir C:/Users/youei/work/AI/kbuild --name llamacpp-cuda --push
+    # 例: python3 kbin.py build llamacpp --host linuxpc --wsl Ubuntu \
+    #        --exchange-dir C:/Users/<you>/work/AI/kbuild --name llamacpp-cuda --push
 
 python3 kbin.py list        # バックアップ一覧（版数・サイズ・note）
 python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に出す
@@ -73,12 +73,12 @@ python3 kbin.py snippet <name>   # notebook側の復元セルを標準出力に�
   → `-DCUDA_cuda_driver_LIBRARY=/usr/local/nvidia/lib64/libcuda.so.1` を直指定
   （`GGML_CUDA_NO_VMM=ON` でも回避できるが `-sm row` が使えなくなる）
 - **buildの同時実行は衝突する**（2026-08-23実証）: レシピの作業dirが固定(`/root/kbin-llamacpp`)のため、同一ホストで2本走ると後発の`rm -rf`が先発を破壊する。「Fatal error: can't create *.cu.o」+「getcwd() failed」が出たらこれ。対策候補: 作業dirに`$$`を付ける or flock
-- WSLが `Wsl/Service/0x80072747` で起動しないことがある → `ssh x299 "wsl --shutdown; Start-Sleep -Seconds 8; wsl -d Ubuntu -- echo OK"` で復旧。ssh先はPowerShellなので`&`連結はバックグラウンドジョブになる（`;`で順次実行する）
+- WSLが `Wsl/Service/0x80072747` で起動しないことがある → `ssh linuxpc "wsl --shutdown; Start-Sleep -Seconds 8; wsl -d Ubuntu -- echo OK"` で復旧。ssh先はPowerShellなので`&`連結はバックグラウンドジョブになる（`;`で順次実行する）
 - `--note` にcommit hash・arch・static/sharedを必ず残す。後から「このバイナリ何だっけ」を防ぐ
 - kernel-metadata.jsonの`id`と`title`のslugが食い違うと、**Kaggleはtitle由来のslugを採用する**（idは無視され警告のみ）。titleはidにslug一致させること
 - **dataset version更新直後にkernelを実行すると旧版がマウントされることがある**（サーバー側のzip展開処理待ち、511MBで数分）。push後は数分置いてからkernelを実行。どの版を掴んだかはBUILDINFO.txtのbuilt_onで確認できる（これがBUILDINFO同梱を必須にする理由でもある）
 - Windows実行の互換注意: `os.symlink`は非管理者不可(→LATESTファイル代替実装済み)、`open()`はcp932デフォルト(→全テキストI/OでUTF-8明示済み)、`wsl.exe`の出力はUTF-16LE
-- **`bash -s`でスクリプトをstdin供給してはいけない**。bashは遅延読みするため、子プロセス(make等)がstdinを横取りすると「途中でrc=0終了」「断片の誤実行(rm -rf再発火)」がタイミング依存で起きる。全経路 `cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh` 方式に統一済み(x299で実害2パターン確認)
+- **`bash -s`でスクリプトをstdin供給してはいけない**。bashは遅延読みするため、子プロセス(make等)がstdinを横取りすると「途中でrc=0終了」「断片の誤実行(rm -rf再発火)」がタイミング依存で起きる。全経路 `cat > /tmp/kbin-recipe.sh && bash /tmp/kbin-recipe.sh` 方式に統一済み(linuxpcで実害2パターン確認)
 - GPUの無いビルド環境(dockerコンテナ/Actionsランナー)ではlibcuda.so.1が無くバイナリを起動できない=スモークテスト不可が正常。実行確認はKaggle側のbintest kernelで行う
 
 ## 変更時の作法

@@ -133,7 +133,7 @@ def store_file(path, name, note=None, source=None):
 
 
 def cmd_import(args):
-    """ローカルファイル(x299等でビルドしたtar.gz)をバックアップに取り込む"""
+    """ローカルファイル(linuxpc等でビルドしたtar.gz)をバックアップに取り込む"""
     if not os.path.exists(args.file):
         sys.exit(f"ファイルが無い: {args.file}")
     store_file(args.file, args.name, note=args.note)
@@ -448,7 +448,7 @@ def main():
     p = sub.add_parser("import", help="ローカルビルド成果物(tar.gz等)を取り込む")
     p.add_argument("file", help="取り込むファイル")
     p.add_argument("name", help="バックアップ名")
-    p.add_argument("--note", help="メモ (例: 'x299 WSL2, commit xxx, arch 60;75;86')")
+    p.add_argument("--note", help="メモ (例: 'linuxpc WSL2, commit xxx, arch 60;75;86')")
     p.set_defaults(fn=cmd_import)
 
     p = sub.add_parser("auto", help="実行マシンで最速経路を自動選択（Linux=docker/直, Win=WSL/docker, 他=ci）")
